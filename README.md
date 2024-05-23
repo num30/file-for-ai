@@ -9,6 +9,8 @@ This tool traverses through a specified directory, reads all the text files (whi
 
 ## Usage
 
+Download the latest binary for the os of your coice from the [releases page](https://github.com/num30/file-for-ai/releases) it's under `Assets` section.
+
 To use this tool, you need to provide at least a directory path as an argument. If an output file name is not provided, it will default to "file-for-ai.txt".
 
 ```bash
