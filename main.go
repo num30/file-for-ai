@@ -7,50 +7,66 @@ import (
 	"strings"
 
 	"github.com/denormal/go-gitignore"
+
+	"github.com/num30/config"
+	"github.com/pkoukk/tiktoken-go"
 )
 
 var ignore gitignore.GitIgnore
 
+type Config struct {
+	// one of available encodings from https://github.com/pkoukk/tiktoken-go?tab=readme-ov-file#available-encodings
+	Model      string `flag:"model" envvar:"MODEL" default:"gpt-4"` // "The model to use for tokenization."
+	OutputFile string `flag:"output" envvar:"FILE" default:"file-for-ai.txt"`
+}
+
 func main() {
+
+	var conf Config
+	err := config.NewConfReader("file-for-ai").Read(&conf)
+	if err != nil {
+		panic(err)
+	}
+
 	// Check if at least a directory path is provided
 	if len(os.Args) < 2 {
 		fmt.Println("Error: Directory path is required.")
 		fmt.Println("Usage: file-for-ai <directory> [output file]")
 		os.Exit(1)
 	}
-	if len(os.Args) > 3 {
-		fmt.Println("Error: Too many arguments.")
-		os.Exit(1)
-	}
 
 	directoryPath := os.Args[1]
 
-	outputFileName := "file-for-ai.txt" // Default output file name
-
-	// If an output filename is provided, use it
-	if len(os.Args) == 3 {
-		outputFileName = os.Args[2]
-	}
+	outputFileName := conf.OutputFile
 
 	// Backup the output file if it already exists
 	if _, err := os.Stat(outputFileName); !os.IsNotExist(err) {
-		fmt.Printf("Output file %s already exists", outputFileName)
+		fmt.Printf("Output file %s already exists\n", outputFileName)
 		os.Exit(1)
 	}
 
 	//gitIgnorePath := filepath.Join(directoryPath, ".gitignore")
-	var err error
 	ignore, err = gitignore.NewRepository(directoryPath)
 	if err != nil {
-		panic(err)
+		fmt.Println("Error creating output file:", err)
+		os.Exit(1)
 	}
 
 	outputFile, err := os.Create(outputFileName)
 	if err != nil {
 		fmt.Println("Error creating output file:", err)
-		return
+		os.Exit(1)
 	}
 	defer outputFile.Close()
+
+	encoding := conf.Model
+
+	tkm, err := tiktoken.EncodingForModel(encoding)
+	if err != nil {
+		fmt.Println("Error getting encoding for model:", err)
+		os.Exit(1)
+	}
+	tokens := 0
 
 	fmt.Println("Merging files:")
 	err = filepath.Walk(directoryPath, func(path string, info os.FileInfo, err error) error {
@@ -76,6 +92,7 @@ func main() {
 				return err
 			}
 			fmt.Println(relativePath)
+			tokens += len(tkm.Encode(string(fileContents), nil, nil))
 
 			separator := fmt.Sprintf("\n\n>>>>>> %s <<<<<<\n\n", relativePath)
 			if _, err := outputFile.WriteString(separator); err != nil {
@@ -99,6 +116,24 @@ func main() {
 	}
 
 	fmt.Printf("Files merged successfully into %s\n", outputFileName)
+	fmt.Printf("Total tokens for model %s: %s\n", conf.Model, formatIntNumber(tokens))
+}
+
+// formats int by adding spaces between thousands
+func formatIntNumber(n int) string {
+	s := fmt.Sprintf("%d", n)
+	if len(s) <= 3 {
+		return s
+	}
+
+	var result string
+	for i, c := range s {
+		if i != 0 && (len(s)-i)%3 == 0 {
+			result += ","
+		}
+		result += string(c)
+	}
+	return result
 }
 
 func isGitIgnored(path string, isDir bool) bool {
