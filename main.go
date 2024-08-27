@@ -15,9 +15,9 @@ import (
 var ignore gitignore.GitIgnore
 
 type Config struct {
-	// one of available encodings from https://github.com/pkoukk/tiktoken-go?tab=readme-ov-file#available-encodings
-	Model      string `flag:"model" envvar:"MODEL" default:"gpt-4"` // "The model to use for tokenization."
-	OutputFile string `flag:"output" envvar:"FILE" default:"file-for-ai.txt"`
+	Model           string `flag:"model" envvar:"MODEL" default:"gpt-4"`
+	OutputFile      string `flag:"output" envvar:"FILE" default:"file-for-ai.txt"`
+	IgnoreGitIgnore bool   `flag:"ignore-gitignore" envvar:"IGNORE_GITIGNORE" default:"false"`
 }
 
 func main() {
@@ -28,27 +28,18 @@ func main() {
 		panic(err)
 	}
 
-	// Check if at least a directory path is provided
 	if len(os.Args) < 2 {
-		fmt.Println("Error: Directory path is required.")
-		fmt.Println("Usage: file-for-ai <directory> [output file]")
+		fmt.Println("Error: Directory path or glob pattern is required.")
+		fmt.Println("Usage: file-for-ai <directory|pattern> [output file]")
 		os.Exit(1)
 	}
 
-	directoryPath := os.Args[1]
+	inputPath := os.Args[1]
 
 	outputFileName := conf.OutputFile
 
-	// Backup the output file if it already exists
 	if _, err := os.Stat(outputFileName); !os.IsNotExist(err) {
 		fmt.Printf("Output file %s already exists\n", outputFileName)
-		os.Exit(1)
-	}
-
-	//gitIgnorePath := filepath.Join(directoryPath, ".gitignore")
-	ignore, err = gitignore.NewRepository(directoryPath)
-	if err != nil {
-		fmt.Println("Error creating output file:", err)
 		os.Exit(1)
 	}
 
@@ -69,49 +60,49 @@ func main() {
 	tokens := 0
 
 	fmt.Println("Merging files:")
-	err = filepath.Walk(directoryPath, func(path string, info os.FileInfo, err error) error {
-		if info.Name() == outputFileName {
-			return nil
-		}
 
-		if err != nil {
-			fmt.Println("Error accessing path:", path, err)
-			return err
-		}
+	if isDirectory(inputPath) {
 
-		relativePath, err := filepath.Rel(directoryPath, path)
-		if err != nil {
-			fmt.Println("Error processing relative path:", path, err)
-			return err
-		}
-
-		if !info.IsDir() && !isGitIgnored(relativePath, info.IsDir()) && isTextFile(path) && !strings.HasPrefix(path, ".") {
-			fileContents, err := os.ReadFile(path)
+		if !conf.IgnoreGitIgnore {
+			fmt.Print("Filtering files using .gitignore... ")
+			ignore, err = gitignore.NewRepository(inputPath)
 			if err != nil {
-				fmt.Println("Error reading file:", path, err)
-				return err
-			}
-			fmt.Println(relativePath)
-			tokens += len(tkm.Encode(string(fileContents), nil, nil))
-
-			separator := fmt.Sprintf("\n\n>>>>>> %s <<<<<<\n\n", relativePath)
-			if _, err := outputFile.WriteString(separator); err != nil {
-				fmt.Println("Error writing separator to output file:", err)
-				return err
-			}
-
-			if _, err := outputFile.Write(fileContents); err != nil {
-				fmt.Println("Error writing file contents to output file:", err)
-				return err
+				fmt.Println("Error creating gitignore repository:", err)
+				os.Exit(1)
 			}
 		}
 
-		return nil
-	})
+		err = filepath.Walk(inputPath, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				fmt.Println("Error accessing path:", path, err)
+				return err
+			}
+			return processFile(inputPath, path, info, outputFile, tkm, &tokens, outputFileName)
+		})
+	} else {
+		files, err := filepath.Glob(inputPath)
+		if err != nil {
+			fmt.Println("Error parsing glob pattern:", err)
+			os.Exit(1)
+		}
+
+		for _, path := range files {
+			info, err := os.Stat(path)
+			if err != nil {
+				fmt.Println("Error accessing file:", path, err)
+				continue
+			}
+			err = processFile(filepath.Dir(path), path, info, outputFile, tkm, &tokens, outputFileName)
+			if err != nil {
+				fmt.Println("Error processing file:", path, err)
+				continue
+			}
+		}
+	}
 
 	fmt.Println()
 	if err != nil {
-		fmt.Println("Error walking through the directory:", err)
+		fmt.Println("Error walking through the directory or processing pattern:", err)
 		return
 	}
 
@@ -119,7 +110,46 @@ func main() {
 	fmt.Printf("Total tokens for model %s: %s\n", conf.Model, formatIntNumber(tokens))
 }
 
-// formats int by adding spaces between thousands
+func isDirectory(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+func processFile(basePath, path string, info os.FileInfo, outputFile *os.File, tkm *tiktoken.Tiktoken, tokens *int, outputFileName string) error {
+	if info.Name() == outputFileName {
+		return nil
+	}
+
+	relativePath, err := filepath.Rel(basePath, path)
+	if err != nil {
+		fmt.Println("Error processing relative path:", path, err)
+		return err
+	}
+
+	if !info.IsDir() && !isGitIgnored(relativePath, info.IsDir()) && isTextFile(path) && !strings.HasPrefix(path, ".") {
+		fileContents, err := os.ReadFile(path)
+		if err != nil {
+			fmt.Println("Error reading file:", path, err)
+			return err
+		}
+		fmt.Println(relativePath)
+		*tokens += len(tkm.Encode(string(fileContents), nil, nil))
+
+		separator := fmt.Sprintf("\n\n>>>>>> %s <<<<<<\n\n", relativePath)
+		if _, err := outputFile.WriteString(separator); err != nil {
+			fmt.Println("Error writing separator to output file:", err)
+			return err
+		}
+
+		if _, err := outputFile.Write(fileContents); err != nil {
+			fmt.Println("Error writing file contents to output file:", err)
+			return err
+		}
+	}
+
+	return nil
+}
+
 func formatIntNumber(n int) string {
 	s := fmt.Sprintf("%d", n)
 	if len(s) <= 3 {
@@ -148,7 +178,6 @@ func isGitIgnored(path string, isDir bool) bool {
 	return false
 }
 
-// isTextFile checks the file extension against a list of known non-text file extensions.
 func isTextFile(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 	return !nonTextFileExtensions[ext]
