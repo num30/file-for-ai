@@ -28,10 +28,10 @@ This will create a file named "file-for-ai.txt" in your current directory with t
 You can also use a glob pattern:
 
 ``` bash
-file-for-ai *.txt
+file-for-ai ./**/*.txt
 ```
 
-This will create a file named "file-for-ai.txt" in your current directory with the contents of all text files matching the pattern.
+This will create a file named "file-for-ai.txt" in your current directory with the contents of all txt files in the current directory and its subdirectories.
 
 To specify a custom output file name:
 

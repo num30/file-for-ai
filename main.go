@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/denormal/go-gitignore"
+	"github.com/yargevad/filepathx"
 
 	"github.com/num30/config"
 	"github.com/pkoukk/tiktoken-go"
@@ -35,7 +36,7 @@ func main() {
 		fmt.Println("Usage: file-for-ai <directory|pattern> --output [output file]")
 		fmt.Println("\nExamples:")
 		fmt.Println("  file-for-ai /path/to/directory")
-		fmt.Println("  file-for-ai '*.txt'")
+		fmt.Println("  file-for-ai './*.txt'")
 		fmt.Println("  file-for-ai /path/to/directory --output custom-output.txt")
 		fmt.Println("\nFor more information, visit https://github.com/num30/file-for-ai?tab=readme-ov-file#file-for-ai")
 		os.Exit(1)
@@ -44,11 +45,6 @@ func main() {
 	inputPath := os.Args[1]
 
 	outputFileName := conf.OutputFile
-
-	if _, err := os.Stat(outputFileName); !os.IsNotExist(err) {
-		fmt.Printf("Output file %s already exists\n", outputFileName)
-		os.Exit(1)
-	}
 
 	outputFile, err := os.Create(outputFileName)
 	if err != nil {
@@ -87,7 +83,7 @@ func main() {
 			return processFile(inputPath, path, info, outputFile, tkm, &tokens, outputFileName)
 		})
 	} else {
-		files, err := filepath.Glob(inputPath)
+		files, err := filepathx.Glob(inputPath)
 		if err != nil {
 			fmt.Println("Error parsing glob pattern:", err)
 			os.Exit(1)
