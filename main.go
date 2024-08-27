@@ -18,11 +18,13 @@ type Config struct {
 	Model           string `flag:"model" envvar:"MODEL" default:"gpt-4"`
 	OutputFile      string `flag:"output" envvar:"FILE" default:"file-for-ai.txt"`
 	IgnoreGitIgnore bool   `flag:"ignore-gitignore" envvar:"IGNORE_GITIGNORE" default:"false"`
+	ProcessNonText  bool   `flag:"process-non-text" envvar:"PROCESS_NON_TEXT" default:"false"`
 }
+
+var conf Config
 
 func main() {
 
-	var conf Config
 	err := config.NewConfReader("file-for-ai").Read(&conf)
 	if err != nil {
 		panic(err)
@@ -30,7 +32,11 @@ func main() {
 
 	if len(os.Args) < 2 {
 		fmt.Println("Error: Directory path or glob pattern is required.")
-		fmt.Println("Usage: file-for-ai <directory|pattern> [output file]")
+		fmt.Println("Usage: file-for-ai <directory|pattern> --output [output file]")
+		fmt.Println("\nExamples:")
+		fmt.Println("  file-for-ai /path/to/directory")
+		fmt.Println("  file-for-ai '*.txt'")
+		fmt.Println("  file-for-ai /path/to/directory --output custom-output.txt")
 		os.Exit(1)
 	}
 
@@ -126,7 +132,7 @@ func processFile(basePath, path string, info os.FileInfo, outputFile *os.File, t
 		return err
 	}
 
-	if !info.IsDir() && !isGitIgnored(relativePath, info.IsDir()) && isTextFile(path) && !strings.HasPrefix(path, ".") {
+	if !info.IsDir() && !isGitIgnored(relativePath, info.IsDir()) && extensionBasedFilter(path) && !strings.HasPrefix(path, ".") {
 		fileContents, err := os.ReadFile(path)
 		if err != nil {
 			fmt.Println("Error reading file:", path, err)
@@ -178,7 +184,11 @@ func isGitIgnored(path string, isDir bool) bool {
 	return false
 }
 
-func isTextFile(path string) bool {
+func extensionBasedFilter(path string) bool {
+	if conf.ProcessNonText {
+		return true
+	}
+
 	ext := strings.ToLower(filepath.Ext(path))
 	return !nonTextFileExtensions[ext]
 }
