@@ -37,6 +37,7 @@ func main() {
 		fmt.Println("  file-for-ai /path/to/directory")
 		fmt.Println("  file-for-ai '*.txt'")
 		fmt.Println("  file-for-ai /path/to/directory --output custom-output.txt")
+		fmt.Println("\nFor more information, visit https://github.com/num30/file-for-ai?tab=readme-ov-file#file-for-ai")
 		os.Exit(1)
 	}
 
